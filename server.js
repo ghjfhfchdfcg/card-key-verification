@@ -13,6 +13,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0'; // 允许外网访问
 
+// ⭐ 验证码存储（简单内存存储）
+const captchaStore = new Map();
+
 // 中间件
 app.use(cors());
 app.use(express.json());
@@ -50,11 +53,78 @@ function initDatabase() {
 // ==================== 用户接口 ====================
 
 /**
+ * 生成验证码
+ */
+app.get('/api/captcha', (req, res) => {
+  const sessionId = Date.now() + '-' + Math.random().toString(36).substring(7);
+  const num1 = Math.floor(Math.random() * 10) + 1;
+  const num2 = Math.floor(Math.random() * 10) + 1;
+  const answer = num1 + num2;
+  
+  // 存储答案（10分钟过期）
+  captchaStore.set(sessionId, {
+    answer,
+    expires: Date.now() + 10 * 60 * 1000
+  });
+  
+  // 清理过期验证码
+  for (const [key, value] of captchaStore.entries()) {
+    if (value.expires < Date.now()) {
+      captchaStore.delete(key);
+    }
+  }
+  
+  res.json({
+    success: true,
+    sessionId,
+    question: `${num1} + ${num2} = ?`
+  });
+});
+
+/**
  * 验证卡密
  */
 app.post('/api/verify', (req, res) => {
   try {
-    const { cardKey } = req.body;
+    const { cardKey, captchaSessionId, captchaAnswer } = req.body;
+    
+    // 验证码检查
+    if (!captchaSessionId || !captchaAnswer) {
+      return res.json({
+        success: false,
+        error: 'Missing captcha',
+        message: '请输入验证码'
+      });
+    }
+    
+    const captcha = captchaStore.get(captchaSessionId);
+    if (!captcha) {
+      return res.json({
+        success: false,
+        error: 'Invalid captcha session',
+        message: '验证码已过期，请刷新页面重新获取'
+      });
+    }
+    
+    if (captcha.expires < Date.now()) {
+      captchaStore.delete(captchaSessionId);
+      return res.json({
+        success: false,
+        error: 'Captcha expired',
+        message: '验证码已过期，请刷新页面重新获取'
+      });
+    }
+    
+    if (parseInt(captchaAnswer) !== captcha.answer) {
+      return res.json({
+        success: false,
+        error: 'Wrong captcha',
+        message: '验证码错误'
+      });
+    }
+    
+    // 验证通过后删除验证码
+    captchaStore.delete(captchaSessionId);
     
     // 验证格式
     if (!cardKey || !cardKey.match(/^KIRO-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/)) {
