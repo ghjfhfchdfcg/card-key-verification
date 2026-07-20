@@ -291,6 +291,39 @@ app.get('/api/stats', (req, res) => {
 });
 
 /**
+ * 获取所有卡密列表（供管理系统同步使用）
+ */
+app.get('/api/cardkeys', (req, res) => {
+  const limit = parseInt(req.query.limit) || 1000;
+  const page = parseInt(req.query.page) || 1;
+  const status = req.query.status;
+  
+  let filtered = cardKeys;
+  if (status && status !== 'all') {
+    filtered = cardKeys.filter(k => k.status === status);
+  }
+  
+  // 排序（最新的在前）
+  filtered.sort((a, b) => b.created_at - a.created_at);
+  
+  // 分页
+  const start = (page - 1) * limit;
+  const end = start + limit;
+  const data = filtered.slice(start, end);
+  
+  res.json({
+    success: true,
+    data: data,
+    pagination: {
+      page,
+      limit,
+      total: filtered.length,
+      totalPages: Math.ceil(filtered.length / limit)
+    }
+  });
+});
+
+/**
  * 健康检查
  */
 app.get('/health', (req, res) => {
