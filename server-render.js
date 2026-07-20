@@ -11,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// 卡密管理系统API地址（从环境变量读取，默认为Render部署的地址）
+// 卡密管理系统API地址（从环境变量读取）
 const CARD_MANAGEMENT_API = process.env.CARD_MANAGEMENT_API || 'https://card-key-verification-1.onrender.com/api';
 
 // 中间件
@@ -19,9 +19,58 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// ⭐ 内存数据库（从管理系统同步）
-let cardKeys = [];
-let lastSyncTime = null;
+// ⭐ 内存数据库（带示例数据）
+let cardKeys = [
+  {
+    card_key: 'KIRO-TEST-1234-5678',
+    status: 'unused',
+    created_at: Date.now(),
+    used_at: null,
+    ip_address: null,
+    credential_data: JSON.stringify({
+      email: 'test@kiro.example.com',
+      provider: 'BuilderId',
+      refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Iktpcm8gVGVzdCIsImlhdCI6MTUxNjIzOTAyMn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      clientId: 'test-client-id-xxx',
+      clientSecret: 'test-client-secret-xxx',
+      region: 'us-west-2',
+      machineId: 'test-machine-id-xxx'
+    })
+  },
+  {
+    card_key: 'KIRO-DEMO-ABCD-EFGH',
+    status: 'unused',
+    created_at: Date.now(),
+    used_at: null,
+    ip_address: null,
+    credential_data: JSON.stringify({
+      email: 'demo@kiro.example.com',
+      provider: 'BuilderId',
+      refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ODc2NTQzMjEiLCJuYW1lIjoiS2lybyBEZW1vIiwiaWF0IjoxNTE2MjM5MDIyfQ.fXj8vQZJKfNxRdCl7qPjPq8L9zKqNxYvW7jQqYzGqKo',
+      clientId: 'demo-client-id-xxx',
+      clientSecret: 'demo-client-secret-xxx',
+      region: 'us-east-1',
+      machineId: 'demo-machine-id-xxx'
+    })
+  },
+  {
+    card_key: 'KIRO-SALE-9999-0000',
+    status: 'unused',
+    created_at: Date.now(),
+    used_at: null,
+    ip_address: null,
+    credential_data: JSON.stringify({
+      email: 'sale@kiro.example.com',
+      provider: 'BuilderId',
+      refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTU1NTU1NTUiLCJuYW1lIjoiS2lybyBTYWxlIiwiaWF0IjoxNTE2MjM5MDIyfQ.YvL8hZNqKfLxQdCm7rPkPr9M0aLrOyZwX8kRrZaHrLp',
+      clientId: 'sale-client-id-xxx',
+      clientSecret: 'sale-client-secret-xxx',
+      region: 'eu-west-1',
+      machineId: 'sale-machine-id-xxx'
+    })
+  }
+];
+let lastSyncTime = Date.now();
 
 // 初始化示例数据（仅用于本地开发）
 function initLocalData() {
@@ -77,6 +126,36 @@ syncFromManagementSystem();
 // 定期同步（每30秒）
 setInterval(syncFromManagementSystem, 30000);
 
+// ⭐ 验证码存储（简单内存存储）
+const captchaStore = new Map();
+
+// 生成验证码
+app.get('/api/captcha', (req, res) => {
+  const sessionId = Date.now() + '-' + Math.random().toString(36).substring(7);
+  const num1 = Math.floor(Math.random() * 10) + 1;
+  const num2 = Math.floor(Math.random() * 10) + 1;
+  const answer = num1 + num2;
+  
+  // 存储答案（10分钟过期）
+  captchaStore.set(sessionId, {
+    answer,
+    expires: Date.now() + 10 * 60 * 1000
+  });
+  
+  // 清理过期验证码
+  for (const [key, value] of captchaStore.entries()) {
+    if (value.expires < Date.now()) {
+      captchaStore.delete(key);
+    }
+  }
+  
+  res.json({
+    success: true,
+    sessionId,
+    question: `${num1} + ${num2} = ?`
+  });
+});
+
 // ==================== 用户接口 ====================
 
 /**
@@ -84,7 +163,45 @@ setInterval(syncFromManagementSystem, 30000);
  */
 app.post('/api/verify', (req, res) => {
   try {
-    const { cardKey } = req.body;
+    const { cardKey, captchaSessionId, captchaAnswer } = req.body;
+    
+    // 验证码检查
+    if (!captchaSessionId || !captchaAnswer) {
+      return res.json({
+        success: false,
+        error: 'Missing captcha',
+        message: '请输入验证码'
+      });
+    }
+    
+    const captcha = captchaStore.get(captchaSessionId);
+    if (!captcha) {
+      return res.json({
+        success: false,
+        error: 'Invalid captcha session',
+        message: '验证码已过期，请刷新页面重新获取'
+      });
+    }
+    
+    if (captcha.expires < Date.now()) {
+      captchaStore.delete(captchaSessionId);
+      return res.json({
+        success: false,
+        error: 'Captcha expired',
+        message: '验证码已过期，请刷新页面重新获取'
+      });
+    }
+    
+    if (parseInt(captchaAnswer) !== captcha.answer) {
+      return res.json({
+        success: false,
+        error: 'Wrong captcha',
+        message: '验证码错误'
+      });
+    }
+    
+    // 验证通过后删除验证码
+    captchaStore.delete(captchaSessionId);
     
     // 验证格式
     if (!cardKey || !cardKey.match(/^KIRO-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/)) {

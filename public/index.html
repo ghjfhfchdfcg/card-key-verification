@@ -304,6 +304,24 @@
         <div class="hint">格式: KIRO-XXXX-XXXX-XXXX</div>
       </div>
 
+      <div class="form-group">
+        <label for="captcha">验证码</label>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input 
+            type="text" 
+            id="captcha" 
+            name="captcha" 
+            placeholder="请输入计算结果"
+            required
+            autocomplete="off"
+            style="flex: 1;"
+          >
+          <span id="captchaQuestion" style="font-size: 16px; font-weight: 600; color: #374151; min-width: 100px;">加载中...</span>
+          <button type="button" onclick="refreshCaptcha()" style="padding: 12px 16px; background: #6b7280; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;">刷新</button>
+        </div>
+        <div class="hint">请计算上方算式并输入结果</div>
+      </div>
+
       <button type="submit" class="btn" id="submitBtn">
         验证卡密
       </button>
@@ -319,9 +337,14 @@
   <script>
     const form = document.getElementById('verifyForm');
     const cardKeyInput = document.getElementById('cardKey');
+    const captchaInput = document.getElementById('captcha');
     const submitBtn = document.getElementById('submitBtn');
     const result = document.getElementById('result');
     const stats = document.getElementById('stats');
+    const captchaQuestion = document.getElementById('captchaQuestion');
+
+    // 验证码会话ID
+    let captchaSessionId = null;
 
     // 自动格式化输入
     cardKeyInput.addEventListener('input', (e) => {
@@ -343,48 +366,33 @@
       e.target.value = formatted;
     });
 
-    // 获取统计信息
-    async function loadStats() {
+    // 加载验证码
+    async function loadCaptcha() {
       try {
-        const response = await fetch('/api/stats');
+        const response = await fetch('/api/captcha');
         const data = await response.json();
         if (data.success) {
-          stats.textContent = `服务器运行中 • 已存储 ${data.totalCardKeys} 个卡密`;
+          captchaSessionId = data.sessionId;
+          captchaQuestion.textContent = data.question;
+          captchaInput.value = '';
         }
       } catch (error) {
-        stats.textContent = '服务器连接失败';
+        captchaQuestion.textContent = '加载失败';
+        console.error('验证码加载失败:', error);
       }
     }
 
-    // 下载JSON文件
-    function downloadJSON(credential, cardKey) {
-      const timestamp = Date.now();
-      const fileName = `claim_${timestamp}.json`;
-      
-      // 构建标准格式的凭证数据（与FlowPilot生成的格式一致）
-      const credentialData = [{
-        email: credential.email,
-        provider: credential.provider || 'BuilderId',
-        refreshToken: credential.refreshToken,
-        clientId: credential.clientId,
-        clientSecret: credential.clientSecret,
-        region: credential.region,
-        machineId: credential.machineId
-      }];
-      
-      const jsonStr = JSON.stringify(credentialData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      return fileName;
+    // 刷新验证码（全局函数供按钮调用）
+    function refreshCaptcha() {
+      loadCaptcha();
+    }
+
+    // 页面加载时获取验证码
+    loadCaptcha();
+
+    // 获取统计信息（已隐藏）
+    async function loadStats() {
+      stats.style.display = 'none';
     }
 
     // 提交表单
@@ -392,9 +400,21 @@
       e.preventDefault();
       
       const cardKey = cardKeyInput.value.trim();
+      const captchaAnswer = captchaInput.value.trim();
       
       if (!cardKey) {
-        showResult(false, '请输入卡密');
+        showResult(false, 
+          `<div class="result-title">❌ 验证失败</div>
+          <div class="result-content">请输入卡密</div>`
+        );
+        return;
+      }
+
+      if (!captchaAnswer) {
+        showResult(false, 
+          `<div class="result-title">❌ 验证失败</div>
+          <div class="result-content">请输入验证码</div>`
+        );
         return;
       }
 
@@ -409,7 +429,11 @@
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ cardKey })
+          body: JSON.stringify({
+            cardKey,
+            captchaSessionId,
+            captchaAnswer
+          })
         });
 
         const data = await response.json();
@@ -450,7 +474,7 @@
                 </button>
               </div>
               
-              <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 8px; font-size: 12px; color: #856404;">
+              <div style="margin-top: 15px; padding: 10px; background: #fef3c7; border-radius: 8px; font-size: 12px; color: #92400e;">
                 💡 <strong>使用方法：</strong><br>
                 1. 点击"复制 JSON"或"下载 JSON"保存凭证<br>
                 2. 将凭证导入到 Kiro 桌面客户端使用<br>
@@ -465,17 +489,27 @@
           
           // 清空输入框
           cardKeyInput.value = '';
+          captchaInput.value = '';
+          
+          // 重新加载验证码
+          loadCaptcha();
         } else {
           showResult(false, 
             `<div class="result-title">❌ 验证失败</div>
             <div class="result-content">${data.message || data.error || '未找到对应的卡密'}</div>`
           );
+          
+          // 重新加载验证码
+          loadCaptcha();
         }
       } catch (error) {
         showResult(false, 
           `<div class="result-title">❌ 验证失败</div>
           <div class="result-content">网络错误: ${error.message}</div>`
         );
+        
+        // 重新加载验证码
+        loadCaptcha();
       } finally {
         // 恢复按钮
         submitBtn.disabled = false;
@@ -500,13 +534,11 @@
       
       // 使用现代剪贴板API
       navigator.clipboard.writeText(jsonStr).then(() => {
-        // 修改按钮文字显示已复制
         const copyBtn = document.querySelector('.copy-btn');
         const originalText = copyBtn.innerHTML;
         copyBtn.innerHTML = '✅ 已复制';
         copyBtn.classList.add('copied');
         
-        // 2秒后恢复原文字
         setTimeout(() => {
           copyBtn.innerHTML = originalText;
           copyBtn.classList.remove('copied');
@@ -539,7 +571,7 @@
       });
     }
 
-    // 下载JSON文件（使用全局变量）
+    // 下载JSON文件
     function downloadJSON() {
       if (!window.currentCredential) {
         alert('没有可下载的数据');
@@ -561,7 +593,6 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      // 修改按钮文字显示已下载
       const downloadBtn = document.querySelector('.download-btn');
       const originalText = downloadBtn.innerHTML;
       downloadBtn.innerHTML = '✅ 已下载';
@@ -571,9 +602,8 @@
       }, 2000);
     }
 
-    // 页面加载时获取统计信息
+    // 页面加载时隐藏统计信息
     loadStats();
-    setInterval(loadStats, 10000); // 每10秒更新一次
   </script>
 </body>
 </html>
