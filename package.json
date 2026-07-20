@@ -4,7 +4,8 @@
   "description": "Kiro卡密验证服务器 - Render部署版",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server-render.js",
+    "dev": "node server.js"
   },
   "engines": {
     "node": "18.x"
