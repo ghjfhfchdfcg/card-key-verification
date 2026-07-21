@@ -21,10 +21,22 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// 数据库初始化
+// 数据库初始化（Railway持久化支持）
+const fs = require('fs');
+
+// 确保数据目录存在（Railway Volume挂载点）
+const dataDir = process.env.DATA_DIR || './data';
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  console.log(`✅ 创建数据目录: ${dataDir}`);
+}
+
+const dbPath = path.join(dataDir, 'cardkeys.db');
+console.log(`📁 数据库路径: ${dbPath}`);
+
 let db;
 try {
-  db = new Database('./cardkeys.db');
+  db = new Database(dbPath);
   console.log('✅ 数据库连接成功');
   initDatabase();
 } catch (err) {

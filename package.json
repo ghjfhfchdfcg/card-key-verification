@@ -1,25 +1,26 @@
 {
-  "name": "kiro-cardkey-verification",
+  "name": "kiro-card-key-verification-system",
   "version": "2.0.0",
-  "description": "Kiro卡密验证服务器 - Render部署版",
+  "description": "Kiro卡密验证+管理系统 - 整合版",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "engines": {
-    "node": "18.x"
-  },
   "keywords": [
     "kiro",
-    "cardkey",
-    "verification"
+    "card-key",
+    "verification",
+    "management"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "better-sqlite3": "^11.0.0",
     "cors": "^2.8.5",
-    "better-sqlite3": "^9.2.2"
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

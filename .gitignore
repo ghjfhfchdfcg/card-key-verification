@@ -1,7 +1,33 @@
+# Node modules
 node_modules/
-*.db
-*.db-shm
-*.db-wal
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database (但保留在服务器上)
+# cardkeys.db 不要忽略,需要部署到服务器
+
+# Environment variables
 .env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
-npm-debug.log
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
